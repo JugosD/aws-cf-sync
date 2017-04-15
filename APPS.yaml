@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion : '2010-09-09'
+
+# INPUT PARAMETERS
+Parameters: 
+  appNumber: 
+    Description: The application number
+    Type: String
+    AllowedValues: [ '1', '2' ]
+
+# DESCRIBE RESOURCES
+Resources:
+
+  ## Role: APP1
+  ## AMI: CENTOS7
+  ## Subnet: Private1
+  ## Security groups: ClosedSecurityGroup
+  EC2InstanceAPP:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-7abd0209
+      IamInstanceProfile: !ImportValue ProfileAPP
+      KeyName: internal
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          SubnetId: !ImportValue SubnetPublic2
+          GroupSet:
+            - !ImportValue OpenSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub App-${appNumber}
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash -xe
+          # install python pip (used for bootstrap)
+          yum install epel-release -y
+          yum install python-pip -y
+          # bootstrap amazon helper script
+          easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          # launch Cloudformation::Init section
+          /usr/bin/cfn-init -v \
+            --stack ${AWS::StackName} \
+            --region ${AWS::Region} \
+            --resource EC2InstanceAPP
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        rolebased:
+          type: S3
+          roleName: !ImportValue RoleAPP
+          buckets: [ !ImportValue S3BucketDeployment ]
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - install
+            - configure
+            - start
+        install:
+          files:
+            /tmp/salt-install.sh:
+              source: https://bootstrap.saltstack.com
+              mode: "755"
+              owner: root
+              group: root
+          commands:
+            salt-install:
+              # -P allow pip; -M install salt-master; -X don't start daemon
+              command: /tmp/salt-install.sh -P -X
+        configure:
+          sources:
+            /etc/salt: !Sub https://deployment-${AWS::AccountId}.s3.amazonaws.com/salt/minion/salt.tar.gz
+          files:
+            /etc/salt/grains:
+              content: !Join
+                - "\n"
+                -
+                  - "role: app-{{appNumber}}"
+                  - "content-bucket: {{contentBucket}}"
+                  - "deployment-bucket: {{deploymentBucket}}"
+              context:
+                appNumber: !Ref appNumber
+                contentBucket: !ImportValue S3BucketContent
+                deploymentBucket: !ImportValue S3BucketDeployment
+              mode: "640"
+              owner: root
+              group: root
+            /etc/salt/minion:
+              content: "master: {{MasterIP}}"
+              context:
+                MasterIP: !ImportValue SaltMasterPrivateIP
+              mode: "640"
+              owner: root
+              group: root
+        start:
+          commands:
+            start-salt:
+              command: service salt-minion restart
+

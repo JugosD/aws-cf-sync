@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Resources:
+  # VPC
+  CustomVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      CidrBlock: "10.0.0.0/16"
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  # Public subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CustomVPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZone: "eu-west-1a"
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CustomVPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZone: "eu-west-1b"
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CustomVPC
+      CidrBlock: "10.0.3.0/24"
+      AvailabilityZone: "eu-west-1c"
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  # Private subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CustomVPC
+      CidrBlock: "10.0.4.0/24"
+      AvailabilityZone: "eu-west-1a"
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Private
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CustomVPC
+      CidrBlock: "10.0.5.0/24"
+      AvailabilityZone: "eu-west-1b"
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Private
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CustomVPC
+      CidrBlock: "10.0.6.0/24"
+      AvailabilityZone: "eu-west-1c"
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Private
+  # Internet gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  GatewayToInternet:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref CustomVPC
+      InternetGatewayId: !Ref InternetGateway
+  # Public route table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref CustomVPC
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayToInternet
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet3
+      RouteTableId: !Ref PublicRouteTable
+  # Private route table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref CustomVPC
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Private
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable

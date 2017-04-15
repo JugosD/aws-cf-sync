@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# DESCRIBE RESOURSES
+Resources:
+
+  ## Bastion role
+  ## Access to S3 storage with ssh keys
+  RoleBastion:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: [ "sts:AssumeRole" ]
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+                - "s3.amazonaws.com"
+
+  ## SaltMaster role
+  ## Access to S3 storage with static content
+  RoleSaltMaster:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: [ "sts:AssumeRole" ]
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+                - "s3.amazonaws.com"
+
+  ## WEB server role
+  ## Access to S3 storage with static content
+  RoleWEB:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: [ "sts:AssumeRole" ]
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+                - "s3.amazonaws.com"
+
+  ## APP server role
+  ## Access to S3 storage with application artifacts
+  RoleAPP:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: [ "sts:AssumeRole" ]
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+                - "s3.amazonaws.com"
+
+  ## Profile for NAT instance
+  ProfileNAT:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles: [ !Ref RoleBastion ]
+
+  ## Profile for SaltMaster instance
+  ProfileSaltMaster:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles: [ !Ref RoleSaltMaster ]
+
+  ## Profile for WEB instance
+  ProfileWEB:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles: [ !Ref RoleWEB ]
+
+  ## Profile for APP instances
+  ProfileAPP:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles: [ !Ref RoleAPP ]
+
+# EXPORT REFERENCES
+Outputs:
+
+  ## Profiles
+  ProfileNAT:
+    Export: { Name: ProfileNAT }
+    Value: !Ref ProfileNAT
+  ProfileSaltMaster:
+    Export: { Name: ProfileSaltMaster }
+    Value: !Ref ProfileSaltMaster
+  ProfileWEB:
+    Export: { Name: ProfileWEB }
+    Value: !Ref ProfileWEB
+  ProfileAPP:
+    Export: { Name: ProfileAPP }
+    Value: !Ref ProfileAPP
+
+  ## Roles
+  RoleBastion:
+    Export: { Name: RoleBastion }
+    Value: !Ref RoleBastion
+  RoleSaltMaster:
+    Export: { Name: RoleSaltMaster }
+    Value: !Ref RoleSaltMaster
+  RoleWEB:
+    Export: { Name: RoleWEB }
+    Value: !Ref RoleWEB
+  RoleAPP:
+    Export: { Name: RoleAPP }
+    Value: !Ref RoleAPP

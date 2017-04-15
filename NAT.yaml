@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion : '2010-09-09'
+
+# DESCRIBE RESOURCES
+Resources:
+
+  ## Role: NAT, WEB server, Bastion, Salt Master
+  ## AMI: Amazon NAT AMI
+  ## Subnet: Public1
+  ## Security groups: OpenSecurityGroup
+  EC2InstanceNAT:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.micro"
+      ImageId: "ami-5399a435"
+      IamInstanceProfile: !ImportValue ProfileNAT
+      KeyName: "bastion"
+      SourceDestCheck: false # important for NAT
+      Tags:
+        - Key: Name
+          Value: BastionNatMasterWeb
+      BlockDeviceMappings:
+        - DeviceName: "xvdh"
+          Ebs:
+            VolumeType: "standard"
+            DeleteOnTermination: "true"
+            VolumeSize: "1"
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          SubnetId: !ImportValue "SubnetPublic1"
+          GroupSet:
+            - !ImportValue "OpenSecurityGroup"
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash -xe
+          /opt/aws/bin/cfn-init -v \
+            --stack ${AWS::StackName} \
+            --region ${AWS::Region} \
+            --resource EC2InstanceNAT
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        rolebased:
+          type: "S3"
+          roleName: !ImportValue "RoleBastion"
+          buckets: [ !ImportValue "S3BucketDeployment" ]
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - install
+            - configure
+            - start
+        install:
+          files:
+            /tmp/salt-install.sh:
+              source: https://bootstrap.saltstack.com
+              mode: "755"
+              owner: root
+              group: root
+          commands:
+            salt-install:
+              # -P allow pip; -M also install salt-master; -X don't start daemon
+              command: /tmp/salt-install.sh -P -M -X
+        configure:
+          sources:
+            /etc/ssh: !Sub "https://deployment-${AWS::AccountId}.s3.amazonaws.com/bastion/keys.tar.gz"
+            /etc/salt: !Sub "https://deployment-${AWS::AccountId}.s3.amazonaws.com/salt/master/salt.tar.gz"
+        start:
+          commands:
+            start-salt:
+              command: service salt-master start
+              command: service salt-minion start
+
+  ## Private route
+  RoutePrivate:
+    Type: AWS::EC2::Route
+    DependsOn: EC2InstanceNAT
+    Properties:
+      RouteTableId: !ImportValue RouteTablePrivate
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref EC2InstanceNAT
+
+
+# Export resources
+Outputs:
+
+  ## SaltMaster Private IP
+  SaltMasterPrivateIP:
+    Value: !GetAtt EC2InstanceNAT.PrivateIp
+    Export: { Name: SaltMasterPrivateIP }

@@ -1,0 +1,22 @@
+base:
+  - VPC
+  - SecurityGroups
+  - IAM
+  - S3
+nat:
+  - require: base
+  - NAT
+apps:
+  - require: nat
+  - APPS:
+      name: APP1
+      args:
+        appNumber: 1
+  - APPS:
+      name: APP2
+      args:
+        appNumber: 2
+        any-other: hello
+web:
+  - require: apps
+  - WEB

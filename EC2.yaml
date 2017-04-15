@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Resources:
+
+  ## Role: NAT, WEB server, Bastion, Salt Master, Salt Minion
+  ## AMI: Amazon NAT AMI
+  ## Subnet: Public1
+  ## Security groups: OpenSecurityGroup
+  EC2InstanceNAT:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.micro"
+      ImageId: "ami-5399a435"
+      IamInstanceProfile: !ImportValue ProfileNAT
+      KeyName: "bastion"
+      SourceDestCheck: false # important for NAT
+      BlockDeviceMappings:
+        - DeviceName: "xvdh"
+          Ebs:
+            VolumeType: "standard"
+            DeleteOnTermination: "true"
+            VolumeSize: "1"
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          SubnetId: !ImportValue "SubnetPublic1"
+          GroupSet:
+            - !ImportValue "OpenSecurityGroup"
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash -xe
+          cfn-init -v \
+            --stack ${AWS::StackName} \
+            --region ${AWS::Region} \
+            --resource EC2InstanceNAT
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        rolebased:
+          type: "S3"
+          roleName: !ImportValue "RoleBastion"
+          buckets: [ !ImportValue "S3BucketDeployment" ]
+      AWS::CloudFormation::Init:
+        configSets:
+          default: [ rollout ]
+        rollout:
+          sources:
+            /etc/ssh: !Sub "https://deployment-${AWS::AccountId}.s3.amazonaws.com/sshkeys/logging/keys.tar"
+          files:
+            /tmp/salt-install.sh:
+              source: https://bootstrap.saltstack.com
+              mode: "755"
+              owner: root
+              group: root
+          commands:
+            salt-install:
+              command: /tmp/salt-install.sh -P -M
+
+  ## Role: APP1
+  ## AMI: CENTOS7
+  ## Subnet: Private1
+  ## Security groups: 
+  EC2InstanceAPP1:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.micro"
+      ImageId: "ami-7abd0209"
+      KeyName: "internal"
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          SubnetId: !ImportValue "SubnetPrivate1"
+          GroupSet:
+            - !ImportValue "ClosedSecurityGroup"
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash -xe
+          yum install epel-release
+          yum install python-pip -y
+          easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          cfn-init -v \
+            --stack ${AWS::StackName} \
+            --region ${AWS::Region} \
+            --resource EC2InstanceAPP1
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default: [ rollout ]
+        install_salt_minion:
+          files:
+            /tmp/salt-install.sh:
+              source: https://bootstrap.saltstack.com
+              mode: "755"
+              owner: root
+              group: root
+          commands:
+            salt-install:
+              command: /tmp/salt-install.sh -P

@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion : '2010-09-09'
+
+# DESCRIBE RESOURCES
+Resources:
+
+  ## Security group for NAT-BASTION and WEB
+  OpenSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http and ssh connection from internet
+      VpcId: !ImportValue VPC
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+
+      ## Inbound
+      SecurityGroupIngress:
+      ## HTTP
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      ## HTTPS
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 0.0.0.0/0
+      ## SSH
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 82.209.214.0/24
+      ## SSH from bastion
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 10.0.0.0/16
+      ## Salt
+      - IpProtocol: tcp
+        FromPort: '4505'
+        ToPort: '4506'
+        CidrIp: 10.0.0.0/16
+
+      ## Outbound
+      SecurityGroupEgress:
+      ## HTTP
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+      ## HTTPS (and AWS Services)
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 0.0.0.0/0
+      ## SSH
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0
+      ## Salt
+      - IpProtocol: tcp
+        FromPort: '4505'
+        ToPort: '4506'
+        CidrIp: 10.0.0.0/16
+      ## Tomcat
+      - IpProtocol: tcp
+        FromPort: '8080'
+        ToPort: '8081'
+        CidrIp: 10.0.0.0/16
+
+
+  ## Security group for internal resources
+  ClosedSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http and ssh connection from OpenSecurityGroup
+      VpcId: !ImportValue VPC
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+
+      ## Inbound
+      SecurityGroupIngress:
+      ## SSH
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        SourceSecurityGroupId: !Ref OpenSecurityGroup
+      ## Salt
+      - IpProtocol: tcp
+        FromPort: '4505'
+        ToPort: '4506'
+        CidrIp: 10.0.0.0/16
+      ## Tomcat
+      - IpProtocol: tcp
+        FromPort: '8080'
+        ToPort: '8081'
+        SourceSecurityGroupId: !Ref OpenSecurityGroup
+
+      ## Outbound
+      SecurityGroupEgress:
+      ## HTTP
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        DestinationSecurityGroupId: !Ref OpenSecurityGroup
+      ## HTTPS
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        DestinationSecurityGroupId: !Ref OpenSecurityGroup
+      ## Salt
+      - IpProtocol: tcp
+        FromPort: '4505'
+        ToPort: '4506'
+        CidrIp: 10.0.0.0/16
+
+# EXPORT REFERENCES
+Outputs:
+  ## Export security groups
+  OpenSecurityGroup:
+    Value: !Ref OpenSecurityGroup
+    Export: { Name: OpenSecurityGroup }
+  ClosedSecurityGroup:
+    Value: !Ref ClosedSecurityGroup
+    Export: { Name: ClosedSecurityGroup }

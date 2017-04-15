@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion : '2010-09-09'
+
+# SET PREDEFINED VALUES
+Mappings:
+  CidrBlocks:
+    vpc: 10.0.0.0/16
+    public:
+      eu-west-1a: 10.0.1.0/24
+      eu-west-1b: 10.0.2.0/24
+      eu-west-1c: 10.0.3.0/24
+    private:
+      eu-west-1a: 10.0.4.0/24
+      eu-west-1b: 10.0.5.0/24
+      eu-west-1c: 10.0.6.0/24
+
+
+# DESCRIBE RESOURCES
+Resources:
+
+  ## VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !FindMap [ CidrBlocks, vpc ]
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+
+  ## Public subnets 
+  ## eu-west-1a
+  SubnetPublic1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: eu-west-1a
+      CidrBlock: !FindMap [ CidrBlocks, public, eu-west-1a ]
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  ## eu-west-1b
+  SubnetPublic2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: eu-west-1b
+      CidrBlock: !FindMap [ CidrBlocks, public, eu-west-1b ]
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  ## eu-west-1c
+  SubnetPublic3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: eu-west-1c
+      CidrBlock: !FindMap [ CidrBlocks, public, eu-west-1c ]
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+
+
+  ## Private subnets
+  ## eu-west-1a
+  SubnetPrivate1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: eu-west-1a
+      CidrBlock: !FindMap [ CidrBlocks, private, eu-west-1a ]
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Private
+  ## eu-west-1b
+  SubnetPrivate2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: eu-west-1b
+      CidrBlock: !FindMap [ CidrBlocks, private, eu-west-1b ]
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Private
+  ## eu-west-1c
+  SubnetPrivate3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: eu-west-1c
+      CidrBlock: !FindMap [ CidrBlocks, private, eu-west-1c ]
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Private
+
+  ## Create Internet gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  #Attach Internet gateway to VPC
+  GatewayToInternet:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  ## Public route table
+  RouteTablePublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Public
+  ## Public route
+  RoutePublic:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayToInternet
+    Properties:
+      RouteTableId: !Ref RouteTablePublic
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  ## Public subnets associate with route table
+  SubnetPublic1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPublic1
+      RouteTableId: !Ref RouteTablePublic
+  SubnetPublic2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPublic2
+      RouteTableId: !Ref RouteTablePublic
+  SubnetPublic3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPublic3
+      RouteTableId: !Ref RouteTablePublic
+
+  ## Private route table
+  RouteTablePrivate:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackName
+      - Key: Network
+        Value: Private
+  ## Public subnets associate with route table
+  SubnetPrivate1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPrivate1
+      RouteTableId: !Ref RouteTablePrivate
+  SubnetPrivate2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPrivate2
+      RouteTableId: !Ref RouteTablePrivate
+  SubnetPrivate3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPrivate3
+      RouteTableId: !Ref RouteTablePrivate
+
+
+# Export resources
+Outputs:
+
+  ## VPC
+  VPC:
+    Value: !Ref VPC
+    Export: { Name: VPC }
+
+  ## Public subnets
+  SubnetPublic1:
+    Value: !Ref SubnetPublic1
+    Export: { Name: SubnetPublic1 }
+  SubnetPublic2:
+    Value: !Ref SubnetPublic2
+    Export: { Name: SubnetPublic2 }
+  SubnetPublic3:
+    Value: !Ref SubnetPublic3
+    Export: { Name: SubnetPublic3 }
+
+  ## Private subnets
+  SubnetPrivate1:
+    Value: !Ref SubnetPrivate1
+    Export: { Name: SubnetPrivate1 }
+  SubnetPrivate2:
+    Value: !Ref SubnetPrivate2
+    Export: { Name: SubnetPrivate2 }
+  SubnetPrivate3:
+    Value: !Ref SubnetPrivate3
+    Export: { Name: SubnetPrivate3 }
+
+  ## Private route table
+  RouteTablePrivate:
+    Value: !Ref RouteTablePrivate
+    Export: { Name: RouteTablePrivate }
+

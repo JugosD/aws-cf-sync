@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# DESCRIBE RESOURSES
+Resources:
+
+  ## Deployment artifact storage
+  S3BucketDeployment:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub "deployment-${AWS::AccountId}"
+
+  ## Content artifact storage
+  S3BucketContent:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub "content-${AWS::AccountId}"
+
+  S3PolicyListForALL:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "s3-policy-list"
+      Roles:
+        - !ImportValue RoleBastion
+        - !ImportValue RoleSaltMaster
+        - !ImportValue RoleWEB
+        - !ImportValue RoleAPP
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Resource: !Sub "arn:aws:s3:::${S3BucketDeployment}"
+            Action: "s3:ListBucket"
+            Effect: Allow
+          - Resource: !Sub "arn:aws:s3:::${S3BucketContent}"
+            Action: "s3:ListBucket"
+            Effect: Allow
+
+  S3PolicyBastion:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "s3-policy-bastion"
+      Roles:
+        - !ImportValue RoleBastion
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Resource: !Sub "arn:aws:s3:::${S3BucketDeployment}/bastion/*"
+            Action: "s3:GetObject"
+            Effect: Allow
+
+  S3PolicySaltMaster:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "s3-policy-salt-master"
+      Roles:
+        - !ImportValue RoleBastion
+        - !ImportValue RoleSaltMaster
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Resource: !Sub "arn:aws:s3:::${S3BucketDeployment}/salt/master/*"
+            Action: "s3:GetObject"
+            Effect: Allow
+
+  S3PolicySaltMinion:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "s3-policy-salt-minion"
+      Roles:
+        - !ImportValue RoleBastion
+        - !ImportValue RoleSaltMaster
+        - !ImportValue RoleWEB
+        - !ImportValue RoleAPP
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Resource: !Sub "arn:aws:s3:::${S3BucketDeployment}/salt/minion/*"
+            Action: "s3:GetObject"
+            Effect: Allow
+
+  S3PolicyWEB:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "s3-policy-web"
+      Roles:
+        - !ImportValue RoleWEB
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Resource: !Sub "arn:aws:s3:::${S3BucketContent}/static/*"
+            Action: "s3:GetObject"
+            Effect: Allow
+
+  S3PolicyAPP:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "s3-policy-app"
+      Roles:
+        - !ImportValue RoleAPP
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Resource: !Sub "arn:aws:s3:::${S3BucketDeployment}/artifacts/*"
+            Action: "s3:GetObject"
+            Effect: Allow
+
+# EXPORT REFERENCES
+Outputs:
+  S3BucketDeployment:
+    Export: { Name: S3BucketDeployment }
+    Value: !Ref S3BucketDeployment
+  S3BucketContent:
+    Export: { Name: S3BucketContent }
+    Value: !Ref S3BucketContent
