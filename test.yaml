@@ -6,6 +6,12 @@ base:
 nat:
   - require: base
   - NAT
+hybris:
+  - require: nat
+  - HYBRIS
+myee:
+  - require: nat
+  - MYEE
 apps:
   - require: nat
   - APPS:
@@ -16,7 +22,6 @@ apps:
       name: APP2
       args:
         appNumber: 2
-        any-other: hello
 web:
   - require: apps
   - WEB
