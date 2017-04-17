@@ -6,11 +6,9 @@ base:
 nat:
   - require: base
   - NAT
-hybris:
+big-apps:
   - require: nat
   - HYBRIS
-myee:
-  - require: nat
   - MYEE
 apps:
   - require: nat
