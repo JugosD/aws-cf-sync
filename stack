@@ -1,40 +1,32 @@
 #!/usr/bin/env python
 """ helper for AWS cloudformation """
-import os
+import sys
 import argparse
 import logging
-from threading import Thread
+from threading import Thread, Event
 from time import sleep
 from collections import namedtuple
 import boto3
 from botocore.exceptions import ClientError, WaiterError, WaiterConfigError
 import yaml
 from stacks_config import get_stacks
+from stacks_config import DIRECTION_ASCEND, DIRECTION_DESCEND
 
+logger = logging.getLogger("stack-loader")
+logger.setLevel(logging.INFO)
 
 def get_args():
     """get command line arguments"""
     parser = argparse.ArgumentParser(description="AWS wrapper")
     subparsers = parser.add_subparsers()
 
-    parser_create = subparsers.add_parser("create", help="Create new stack")
-    parser_create.add_argument("stack_name", help="name of stack")
-    parser_create.add_argument("pairs", nargs="*", help="parameters for stack")
-    parser_create.set_defaults(func=create_stack)
+    parser_up_to = subparsers.add_parser("up-to", help="Create stacks hierarchy")
+    parser_up_to.add_argument("stack_name", help="name of stack")
+    parser_up_to.set_defaults(func=up_to)
 
-    parser_update = subparsers.add_parser("update", help="Update stack")
-    parser_update.add_argument("stack_name", help="name of stack")
-    parser_update.add_argument("pairs", nargs="*", help="parameters for stack")
-    parser_update.set_defaults(func=update_stack)
-
-    parser_delete = subparsers.add_parser("delete", help="Delete stack")
-    parser_delete.add_argument("stack_name", help="name of stack")
-    parser_delete.set_defaults(func=delete_stack)
-
-    parser_view = subparsers.add_parser("view", help="view changes")
-    parser_view.add_argument("stack_name", help="name of stack")
-    parser_view.add_argument("direction", choises=["ascend", "descend"], help="direction of view")
-    parser_view.set_defaults(func=view)
+    parser_down_to = subparsers.add_parser("down-to", help="Delete stacks hierarchy")
+    parser_down_to.add_argument("stack_name", help="name of stack")
+    parser_down_to.set_defaults(func=down_to)
 
     return parser.parse_args()
 
@@ -42,135 +34,133 @@ ACTION_CREATE = "create"
 ACTION_UPDATE = "update"
 ACTION_DELETE = "delete"
 
-WAIT_ACTION = dict(
-    create="stack_create_complete",
-    update="stack_update_complete",
-    delete="stack_delete_complete")
-
-
-def wait_stack(cloudformation, action, stack_name, echo_timeout=5):
-    """ wait stack create complete """
-
-    def wait_wrapper(waiter, action, stack_name):
-        """ catch waiter error """
-        try:
-            waiter.wait(StackName=stack_name)
-            logging.info("%s %s completed", stack_name, action)
-        except (WaiterError, WaiterConfigError) as error:
-            logging.error(error)
-
-    waiter = cloudformation.get_waiter(WAIT_ACTION[action])
-    wait = Thread(target=wait_wrapper,
-                  args=(waiter, action, stack_name))
-    wait.start()
-    sleep(echo_timeout)
-    while wait.is_alive():
-        logging.info("waiting...")
-        sleep(echo_timeout)
+WAIT_ACTION = {ACTION_CREATE : "stack_create_complete",
+               ACTION_UPDATE : "stack_update_complete",
+               ACTION_DELETE : "stack_delete_complete"}
 
 def load_file(file_path):
     """ load file """
-    logging.info("try load file: %s", file_path)
     try:
-        return open(file_path).read()
+        data = open(file_path).read()
+        logger.debug("File load success: %s", file_path)
+        return data
     except (OSError, IOError) as error:
-        logging.exception(error)
-
-def get_config():
-    """ load config file """
-    return load_file("test.yaml")
+        logger.debug("File load failed: %s", file_path)
+        logger.exception(error)
 
 def get_template(stack_name):
     """ load template file """
     file_path = stack_name + ".yaml"
     return load_file(file_path)
 
-KEY_PARAMETERS = "Parameters" 
+KEY_PARAMETERS = "Parameters"
 KEY_CAPABILITIES = "Capabilities"
 KEY_PARAMETER_KEY = "ParameterKey"
 KEY_PARAMETER_VALUE = "ParameterValue"
-ValidateResponse = namedtuple("validate_response", ["required_parameters", "capabilities"])
+ValidStack = namedtuple("validate_result",
+                        ["name", "template", "parameters", "capabilities"])
 
 def validate_stack(cloudformation, stack):
     """ validate stack """
     template = get_template(stack.file_name)
     try:
-        validate_response = cloudformation.validate_template(TemplateBody=template)
-        try:
-            required_parameters = [parameter[KEY_PARAMETER_KEY]
-                                   for parameter in validate_response[KEY_PARAMETERS]]
-        except KeyError:
-            required_parameters = []
-        try:
-            capabilities = validate_response[KEY_CAPABILITIES]
-        except KeyError:
-            capabilities = []
-        logging.info("Template %s is valid", stack.file_name)
-        return ValidateResponse(required_parameters, capabilities)
+        validate_result = cloudformation.validate_template(TemplateBody=template)
+        logger.debug("Template is valid: %s", stack.file_name)
+        required_parameters = [parameter[KEY_PARAMETER_KEY]
+                               for parameter in validate_result.get(KEY_PARAMETERS, [])]
+        resolved_parameters = resolve_parameters(stack, required_parameters)
+        logger.debug("Parameters resolved: %s", stack.file_name)
+        return ValidStack(name=stack.name,
+                          template=template,
+                          parameters=resolved_parameters,
+                          capabilities=validate_result.get(KEY_CAPABILITIES, []))
     except ClientError as error:
-        logging.error("Template validation error: %s", stack.file_name)
-        logging.error(error)
+        logger.error("Template validation error: %s", stack.file_name)
+        logger.error(error)
+    except KeyError as error:
+        logger.error(error)
 
 def resolve_parameters(stack, required_parameters):
     """ resolve parameters """
     not_resolved = set(required_parameters) ^ set(stack.parameters.keys())
     if not_resolved:
-        logging.error("For stack %s can't resolve parameter: %s",
-                      stack.name,
-                      not_resolved)
+        raise KeyError(
+            "For stack {name} can't resolve parameters: {parameters}".format(
+                name=stack.name,
+                parameters=not_resolved))
     else:
-        return [{"ParameterKey" : key,
+        return [{"ParameterKey"   : key,
                  "ParameterValue" : stack.parameters[key]}
                 for key in required_parameters]
 
 def create_stack(cloudformation, stack):
     """ create stack and wait creation complete """
-    template = get_template(stack.file_name)
-    response = validate_stack(cloudformation, stack)
-    resolve_parameters(stack, response.required_parameters)
     cloudformation.create_stack(StackName=stack.name,
-                                TemplateBody=template,
+                                TemplateBody=stack.template,
                                 Parameters=stack.parameters,
-                                Capabilities=response.capabilities)
-
+                                Capabilities=stack.capabilities)
+NOT_WAIT = "not_wait"
 def update_stack(cloudformation, stack):
     """ update stack and wait update complete """
-    template = get_template(stack.file_name)
-    response = validate_stack(cloudformation, stack)
-    resolve_parameters(stack, response.required_parameters)
-    cloudformation.update_stack(StackName=stack.name,
-                                TemplateBody=template,
-                                Parameters=stack.parameters,
-                                Capabilities=response.capabilities)
+    try:
+        cloudformation.update_stack(StackName=stack.name,
+                                    TemplateBody=stack.template,
+                                    Parameters=stack.parameters,
+                                    Capabilities=stack.capabilities)
+    except ClientError as error:
+        if error.response["Error"]["Message"] != "No updates are to be performed.":
+            raise
+        else:
+            logger.info("Stack is up-to-date: %s", stack.name)
+            return NOT_WAIT
 
 def delete_stack(cloudformation, stack):
     """ delete stack and wait until delete completed """
     cloudformation.delete_stack(StackName=stack.name)
 
-ACTION_FUNC = dict(
-    ACTION_CREATE=create_stack,
-    ACTION_UPDATE=update_stack,
-    ACTION_DELETE=delete_stack)
+def wait_stack(cloudformation, action, stack_name):
+    """ wait stack create complete """
 
-def performe_stack(action=None, stack=None):
-    """ update stack and wait update complete """
-    logging.info("%s stack: %s", action, stack.name)
+    def print_message(message, stoped, dots_count=3, echo_timeout=2):
+        """ print message while wait complete performe action """
+        index = 0
+        dots = "." * dots_count
+        spaces = " " * dots_count
+        while not stoped.wait(echo_timeout):
+            out_str = "{message}{dots_spaces}\r".format(
+                message=message,
+                dots_spaces=dots[:index]+spaces[index:])
+            sys.stdout.write(out_str)
+            sys.stdout.flush()
+            index = (index + 1) % (dots_count + 1)
+
     try:
-        cloudformation = boto3.client("cloudformation")
-        ACTION_FUNC[action](cloudformation, stack)
+        stop_print = Event()
+        message = "Wait {action} {name}".format(action=action,
+                                                name=stack_name)
+        print_while_wait = Thread(target=print_message,
+                                  args=(message, stop_print))
+        print_while_wait.start()
+        waiter = cloudformation.get_waiter(WAIT_ACTION[action])
+        waiter.wait(StackName=stack_name)
+        logger.info("Wait done: %s", stack_name)
+    except (WaiterError, WaiterConfigError) as error:
+        logger.error(error)
+        print(error.__dict__)
+    finally:
+        stop_print.set()
+
+ACTION_FUNC = {ACTION_CREATE : create_stack,
+               ACTION_UPDATE : update_stack,
+               ACTION_DELETE : delete_stack}
+
+def performe(cloudformation, action, stack):
+    """ update stack and wait update complete """
+    logger.info("%s stack: %s", action, stack.name)
+    result = ACTION_FUNC[action](cloudformation, stack)
+    if result != NOT_WAIT:
         wait_stack(cloudformation, action, stack.name)
-    except ClientError as error:
-        if error.operation_name == "ValidateTemplate":
-            logging.error(error)
-            logging.error("Check your template")
-        elif error.operation_name == "UpdateStack":
-            logging.info("Stack %s is up-to-date", stack.name)
-        else:
-            logging.error(error)
-            print(error.__dict__)
-    except Exception as error:
-        logging.error(error)
-        logging.error("Not a ClientError")
+    logger.info("%s done stack: %s", action, stack.name)
 
 STACK_FILTER_ACTIVE = ['CREATE_IN_PROGRESS',
                        'CREATE_FAILED',
@@ -192,20 +182,46 @@ STACK_FILTER_DELETED = 'DELETE_COMPLETE'
 KEY_STACK_SUMMARIES = "StackSummaries"
 KEY_STACK_NAME = "StackName"
 
-def view(stack_name, direction):
-    config = yaml.load(open("test.yaml").read())
-    stacks = list(get_stacks(config, stack_name, direction))
-    cloudformation = boto3.client("cloudformation")
-    list_stacks_response = cloudformation.list_stacks(StackStatusFilter=STACK_FILTER_ACTIVE)
-    exist_stacks = [stack[KEY_STACK_NAME] for stack in list_stacks_response[KEY_STACK_SUMMARIES]]
-    stacks_to_update = list(filter(lambda stack: stack.name in exist_stacks, stacks))
-    stacks_to_create = list(filter(lambda stack: stack.name not in exist_stacks, stacks))
-    #print(exist_stacks)
-    for stack in stacks:
-        resp = validate_stack(cloudformation, stack)
-        params = resolve_parameters(stack, resp.required_parameters)
-        print(resp)
-        print(params)
+def get_exist_stacks(cloudformation):
+    """ get exist stacks """
+    response = cloudformation.list_stacks(StackStatusFilter=STACK_FILTER_ACTIVE)
+    return [stack[KEY_STACK_NAME]
+            for stack in response.get(KEY_STACK_SUMMARIES, [])]
+
+def performe_hierarchy(stack_name, direction):
+    """ all the magic starts here """
+    try:
+        cloudformation = boto3.client("cloudformation")
+        exist_stacks = get_exist_stacks(cloudformation)
+
+        config = yaml.load(load_file("config.yaml"))
+        stacks = get_stacks(config, stack_name, direction)
+        valid_stacks = [validate_stack(cloudformation, stack)
+                        for stack in stacks]
+        if not all(valid_stacks):
+            raise Exception("Fix all problem with validation")
+        for stack in valid_stacks:
+            if direction == DIRECTION_DESCEND:
+                if stack.name in exist_stacks:
+                    performe(cloudformation, ACTION_UPDATE, stack)
+                else:
+                    performe(cloudformation, ACTION_CREATE, stack)
+            if direction == DIRECTION_ASCEND:
+                if stack.name in exist_stacks:
+                    performe(cloudformation, ACTION_DELETE, stack)
+    except ClientError as error:
+        logger.error(error)
+        print(error.__dict__)
+    except Exception as error:
+        logger.exception(error)
+
+def up_to(stack_name):
+    """ create and update stack hierarchy """
+    performe_hierarchy(stack_name, DIRECTION_DESCEND)
+
+def down_to(stack_name):
+    """ delete stack hierarchy """
+    performe_hierarchy(stack_name, DIRECTION_ASCEND)
 
 def main():
     """ entry point """
@@ -214,8 +230,6 @@ def main():
     default_func(**kwargs)
 
 if __name__ in "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(name)-12.12s : %(asctime)-8s %(levelname)-8s %(message)s",
+    logging.basicConfig(format="%(name)-12.12s : %(asctime)-8s %(levelname)-8s %(message)s",
                         datefmt="%X")
-    view("web", "descend")
-    # main()
+    main()

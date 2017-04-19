@@ -49,6 +49,9 @@ Resources:
             - configure
             - start
         install:
+          packages:
+            yum:
+              git: []
           files:
             /tmp/salt-install.sh:
               source: https://bootstrap.saltstack.com

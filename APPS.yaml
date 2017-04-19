@@ -23,9 +23,10 @@ Resources:
       KeyName: internal
       NetworkInterfaces:
         - DeviceIndex: '0'
-          SubnetId: !ImportValue SubnetPublic2
-          GroupSet:
-            - !ImportValue OpenSecurityGroup
+          SubnetId:
+            Fn::ImportValue:
+              !Sub "SubnetPrivate${appNumber}"
+          GroupSet: [ !ImportValue ClosedSecurityGroup ]
       Tags:
         - Key: Name
           Value: !Sub App-${appNumber}
@@ -94,4 +95,12 @@ Resources:
           commands:
             start-salt:
               command: service salt-minion restart
+
+# Export resources
+Outputs:
+
+  ## SaltMaster Private IP
+  APPPrivateIP:
+    Value: !GetAtt EC2InstanceAPP.PrivateIp
+    Export: { Name: !Sub "APP${appNumber}PrivateIP" }
 
